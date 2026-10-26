@@ -13,7 +13,7 @@ import pytest
 from llama_index.core.base.llms.types import ChatMessage, MessageRole, ToolCallBlock
 from llama_index.core.llms import MockFunctionCallingLLM
 
-from llama_index.wity import WityClassifier
+from llama_index.wity import WityClassifier, WityExtractor, WitySplitter
 
 TEST_KEY = "wity_test_secret_1234567890"
 """A made-up key. Tests check that it never leaks."""
@@ -77,6 +77,28 @@ class FakeWity:
         options.setdefault("api_key", TEST_KEY)
         options.setdefault("max_retries", 0)
         return WityClassifier(
+            http_client=httpx.Client(transport=transport),
+            http_async_client=httpx.AsyncClient(transport=transport),
+            **options,
+        )
+
+    def splitter(self, **options: Any) -> WitySplitter:
+        """A splitter wired to this fake server. No retries unless asked for."""
+        transport = httpx.MockTransport(self._handle)
+        options.setdefault("api_key", TEST_KEY)
+        options.setdefault("max_retries", 0)
+        return WitySplitter(
+            http_client=httpx.Client(transport=transport),
+            http_async_client=httpx.AsyncClient(transport=transport),
+            **options,
+        )
+
+    def extractor(self, **options: Any) -> WityExtractor:
+        """An extractor wired to this fake server, with no progress bar."""
+        transport = httpx.MockTransport(self._handle)
+        options.setdefault("api_key", TEST_KEY)
+        options.setdefault("show_progress", False)
+        return WityExtractor(
             http_client=httpx.Client(transport=transport),
             http_async_client=httpx.AsyncClient(transport=transport),
             **options,

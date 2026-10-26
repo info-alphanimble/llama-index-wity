@@ -255,7 +255,7 @@ async def test_context_is_not_left_in_the_checked_state(fake: FakeWity) -> None:
             return await super().aclassify(state, questions)
 
     fake.json(noul_body("is_risky", 0.125))
-    spy = Spy(api_key="k", max_retries=0, http_async_client=fake.classifier()._http_async_client)
+    spy = Spy(api_key="k", max_retries=0, http_async_client=fake.classifier()._clients._http_async_client)
 
     async def remember(ctx: Context, note: str) -> str:
         """Save a note."""

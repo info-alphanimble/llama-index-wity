@@ -8,6 +8,9 @@ from wity import (
     BadRequestError,
     Choice,
     ChoiceAnswer,
+    ExtractEntity,
+    ExtractResponse,
+    ExtractType,
     InsufficientBalanceError,
     InternalServerError,
     Noul,
@@ -19,6 +22,9 @@ from wity import (
     ReasoningInfo,
     Score,
     ScoreAnswer,
+    SplitItem,
+    SplitResponse,
+    SplitSpec,
     SystemOneResponse,
     Usage,
     WityError,
@@ -28,10 +34,12 @@ from wity import (
 )
 
 from .classifier import WityClassifier
+from .extractor import WityExtractor
 from .selector import WitySelector
+from .splitter import WitySplitter
 from .tool_gate import WityToolGate
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "APIConnectionError",
@@ -41,6 +49,9 @@ __all__ = [
     "BadRequestError",
     "Choice",
     "ChoiceAnswer",
+    "ExtractEntity",
+    "ExtractResponse",
+    "ExtractType",
     "InsufficientBalanceError",
     "InternalServerError",
     "Noul",
@@ -52,11 +63,16 @@ __all__ = [
     "ReasoningInfo",
     "Score",
     "ScoreAnswer",
+    "SplitItem",
+    "SplitResponse",
+    "SplitSpec",
     "SystemOneResponse",
     "Usage",
     "WityClassifier",
     "WityError",
+    "WityExtractor",
     "WitySelector",
+    "WitySplitter",
     "WityToolGate",
     "choice",
     "noul",

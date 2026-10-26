@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import weakref
 from collections.abc import Mapping
 from typing import Any
 
@@ -12,6 +10,7 @@ import wity
 from llama_index.core.instrumentation import get_dispatcher  # type: ignore[attr-defined]  # re-exported without __all__
 from wity import Question, Reasoning, SystemOneResponse
 
+from ._clients import WityClients
 from ._state import to_wity_state
 
 dispatcher = get_dispatcher(__name__)
@@ -59,19 +58,13 @@ class WityClassifier:
         self.questions = dict(questions) if questions is not None else None
         self.reasoning: Reasoning | None = reasoning
         self.max_latency_ms = max_latency_ms
-        # Kept for the async clients, made later, one per event loop. Not in repr(), and spans don't record it.
-        self._options: dict[str, Any] = {
-            "api_key": api_key,
-            "base_url": base_url,
-            "timeout": timeout,
-            "max_retries": max_retries,
-        }
-        self._http_async_client = http_async_client
-        # Made here, so a missing key or a bad address fails now, not at the first call.
-        self._client = wity.WityClient(**self._options, http_client=http_client)
-        # One async client per event loop: a connection opened in one loop can't be used from another.
-        self._async_clients: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, wity.AsyncWityClient] = (
-            weakref.WeakKeyDictionary()
+        self._clients = WityClients(
+            api_key=api_key,
+            base_url=base_url,
+            timeout=timeout,
+            max_retries=max_retries,
+            http_client=http_client,
+            http_async_client=http_async_client,
         )
 
     def __repr__(self) -> str:
@@ -80,7 +73,7 @@ class WityClassifier:
     @dispatcher.span
     def classify(self, state: Any, questions: Mapping[str, Question] | None = None) -> SystemOneResponse:
         """Ask the questions about ``state``. Pass ``questions`` only if the classifier has none."""
-        return self._client.system_one(
+        return self._clients.sync.system_one(
             state=to_wity_state(state),
             questions=self._questions(questions),
             reasoning=self.reasoning,
@@ -90,7 +83,7 @@ class WityClassifier:
     @dispatcher.span
     async def aclassify(self, state: Any, questions: Mapping[str, Question] | None = None) -> SystemOneResponse:
         """Async ``classify``."""
-        return await self._async_client().system_one(
+        return await self._clients.for_this_loop().system_one(
             state=to_wity_state(state),
             questions=self._questions(questions),
             reasoning=self.reasoning,
@@ -105,24 +98,10 @@ class WityClassifier:
             raise ValueError("Pass questions, here or when you create the classifier.")
         return chosen
 
-    def _async_client(self) -> wity.AsyncWityClient:
-        loop = asyncio.get_running_loop()
-        client = self._async_clients.get(loop)
-        if client is None:
-            # A client holds its loop through its open connections, so the weak key alone never lets a
-            # closed loop go. Drop those clients here, or each `asyncio.run` would leave a socket open.
-            for old_loop in [old for old in self._async_clients if old.is_closed()]:
-                del self._async_clients[old_loop]
-            client = wity.AsyncWityClient(**self._options, http_client=self._http_async_client)
-            self._async_clients[loop] = client
-        return client
-
     def close(self) -> None:
         """Close the connections ``classify`` uses. Clients you passed in stay open."""
-        self._client.close()
+        self._clients.close()
 
     async def aclose(self) -> None:
         """Close the connections ``aclassify`` uses in this event loop. Clients you passed in stay open."""
-        client = self._async_clients.pop(asyncio.get_running_loop(), None)
-        if client is not None:
-            await client.close()
+        await self._clients.aclose()

@@ -2,9 +2,11 @@
 
 Use [Wity](https://wity.alphanimble.com), the typed-decision API, in LlamaIndex. Ask Wity questions with fixed options and get a probability for every option, in a workflow, a router or an agent.
 
-It has three parts:
+It has five parts:
 
 - `WityClassifier`: asks Wity typed questions from any LlamaIndex code.
+- `WitySplitter`: a node parser that cuts documents into whole items, like emails in a thread or clauses in a contract.
+- `WityExtractor`: a metadata extractor that pulls named fields out of each node.
 - `WitySelector`: Wity picks the query engine or retriever for each query.
 - `WityToolGate`: Wity checks risky tool calls before they run.
 
@@ -166,6 +168,37 @@ gate = WityToolGate(
 )
 ```
 
+## Split and extract
+
+`WitySplitter` cuts documents into whole items, one node per item. `WityExtractor` pulls named fields out of each node and adds them to its metadata. Use them together in an ingestion pipeline:
+
+```python
+from llama_index.core import Document
+from llama_index.core.ingestion import IngestionPipeline
+from llama_index.wity import WityExtractor, WitySplitter
+
+pipeline = IngestionPipeline(transformations=[
+    WitySplitter(split="one item per email"),
+    WityExtractor(
+        fields={"sender": "The email address the email is from", "when": "A date the email mentions"},
+        types={"when": "date"},
+    ),
+])
+
+nodes = pipeline.run(documents=[Document(text=thread)])
+nodes[0].text                  # "From: dana@example.com\n..."
+nodes[0].metadata["sender"]    # "dana@example.com"
+nodes[0].start_char_idx        # where the email starts in the thread
+```
+
+**Splitting.** Say what one item is in plain words. Every item is an exact slice of the text, so `start_char_idx` and `end_char_idx` point at it in the original document. Without `split`, Wity cuts one item per paragraph. For more control, pass a `SplitSpec(unit=..., starts_at=[...], keep_together=[...], never_split=[...])`. To split the way a saved split skill does, pass `skill="name"` instead of `split`. `split_text(text)` gives the items as text.
+
+**Extracting.** Ask for 1 to 16 fields. Each field's name becomes a metadata key, holding the values found, as written. Several values are joined with `"; "`, like `"Acme Ltd; Bob"`. A field with no value gets `""`. Metadata stays text, because many vector stores, like Chroma, take only text and numbers. For the values as a list, call `extract` in `wity-sdk`. `types` takes `"date"`, `"duration"` or `"number"` for values that should come back normalised. The extractor reads the node's own text, not its metadata. It sends `num_workers` requests at once (4 by default).
+
+A document can be up to 60,000 characters. Split and extract read the whole document, so they wait at least two minutes before timing out.
+
+Both work with `pipeline.run(num_workers=4)`. Each worker process opens its own connections, with the same key and options. An `http_client` you passed in stays in the main process.
+
 ## Reasoning and speed
 
 Wity answers most questions in one fast pass. With `reasoning="auto"` it thinks first when a question needs it, for example when the top options are close. That usually takes 1–4 seconds.
@@ -189,13 +222,15 @@ gate = WityToolGate(classifier=WityClassifier(reasoning="always"))
 
 | Option | Default | What it does |
 |---|---|---|
-| `questions` | none | Fixed questions. Then each call takes only the state. |
+| `questions` | none | `WityClassifier`: fixed questions. Then each call takes only the state. |
 | `reasoning` | API default (`"auto"`) | `"off"`, `"auto"` or `"always"` |
 | `max_latency_ms` | none | Time limit per request, a whole number from 200 to 120000 ms |
+| `split`, `skill` | API default | `WitySplitter`: what one item is, or a split skill. Not both. |
+| `fields`, `types` | required, none | `WityExtractor`: the fields to pull out, and which ones to normalise |
 | `api_key` | `WITY_API_KEY` | Your Wity key |
 | `base_url` | `WITY_BASE_URL`, then the SDK's default | The API address |
 | `timeout` | 60 | Seconds per attempt |
-| `max_retries` | 2 | Retries on 408, 429, 5xx and network failures |
+| `max_retries` | 2 | Retries on 408, 429, 5xx and network failures. On `WityExtractor`, this is LlamaIndex's own setting: it runs the whole batch again, so leave it at 0. |
 | `http_client`, `http_async_client` | none | Your own `httpx` clients, for example for a proxy |
 
 ## Errors, retries and tracing
@@ -217,6 +252,10 @@ All of them are a `WityError`. Error messages and logs never include your state 
 **Retries.** The SDK already retries failed calls (`max_retries=2`). Don't add your own retries on top without setting `max_retries=0`.
 
 **Tracing.** Each `classify` and `aclassify` call is a span in LlamaIndex's instrumentation, so it shows up in Arize Phoenix, Langfuse and the other LlamaIndex observability tools. The span's input includes the state you sent. Your key never appears in spans or `repr()`.
+
+## Update notice
+
+When code that uses `llama-index-wity` runs at a terminal, it tells you on stderr when a newer version is out, at most once a day. It asks PyPI at most once a day, in the background, so nothing waits for it. It stays quiet in CI, when output is piped, and on servers. Set `WITY_NO_UPDATE_CHECK=1` to turn it off. The same variable turns it off in every Wity package.
 
 ## Examples
 

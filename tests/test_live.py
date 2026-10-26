@@ -1,4 +1,4 @@
-"""Real calls to Wity. Skipped unless WITY_LIVE=1. 6 calls, costing a fraction of a cent.
+"""Real calls to Wity. Skipped unless WITY_LIVE=1. 8 calls, costing a fraction of a cent.
 
 Needs WITY_API_KEY. See CONTRIBUTING.md for how to run them.
 """
@@ -10,9 +10,20 @@ import pytest
 from llama_index.core.base.llms.types import ChatMessage, MessageRole
 from llama_index.core.llms import MockLLM
 from llama_index.core.query_engine import CustomQueryEngine, RouterQueryEngine
+from llama_index.core.schema import TextNode
 from llama_index.core.tools import QueryEngineTool
 
-from llama_index.wity import BadRequestError, WityClassifier, WitySelector, WityToolGate, choice, noul, score
+from llama_index.wity import (
+    BadRequestError,
+    WityClassifier,
+    WityExtractor,
+    WitySelector,
+    WitySplitter,
+    WityToolGate,
+    choice,
+    noul,
+    score,
+)
 
 from .conftest import calling_llm
 from .test_tool_gate import run_agent
@@ -112,3 +123,19 @@ async def test_gate_runs_an_approved_call() -> None:
     [output] = await run_agent([gate.guard(send_email)], llm, ask=ask)
     assert output.content == "Sent to sam@example.com.", output.content
     assert ran == ["sam@example.com"]
+
+
+THREAD = "From: dana@example.com\nSeal test failed.\n\nFrom: marcus@example.com\nRerun it on 9 October 2025."
+
+
+def test_split_cuts_whole_items() -> None:
+    texts = WitySplitter(split="one item per email", api_key=KEY, base_url=BASE_URL).split_text(THREAD)
+    assert len(texts) == 2
+    assert all(text in THREAD for text in texts)
+
+
+def test_extract_finds_a_typed_field() -> None:
+    extractor = WityExtractor(
+        fields={"when": "The date of the rerun"}, types={"when": "date"}, api_key=KEY, base_url=BASE_URL
+    )
+    assert extractor.extract([TextNode(text=THREAD)]) == [{"when": "2025-10-09"}]

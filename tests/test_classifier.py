@@ -196,7 +196,7 @@ def test_works_from_several_event_loops(fake: FakeWity) -> None:
     asyncio.run(classifier.aclassify("second"))
     assert len(fake.requests) == 2
     # Clients of closed loops aren't kept.
-    assert len(classifier._async_clients) <= 1
+    assert len(classifier._clients._async_clients) <= 1
 
 
 async def test_close_keeps_your_own_clients_open() -> None:
